@@ -106,16 +106,22 @@ function deref(o)
     return d
 end
 
-function table.reverse(tab)
-    local size = #tab
-    local newtab = {}
- 
-    for i, v in ipairs(tab) do
-        newtab[size-i] = v
+function table.reverse(t)
+    local reversedTable = {}
+    local itemCount = #t
+    for k, v in ipairs(t) do
+        reversedTable[itemCount + 1 - k] = v
     end
- 
-    table.insert(newtab, 1, tab[size])
-    return newtab
+    return reversedTable
+end
+
+function table.contains(table, element)
+  for _, value in pairs(table) do
+    if value == element then
+      return true
+    end
+  end
+  return false
 end
 
 -- graphical tools
@@ -149,7 +155,8 @@ function accumulatef()
     -- store defined functions in a designated table
     for i, v in ipairs(var.list()) do
         local fname = string.find(v, 'func%d+')
-        local inf = functions[tonumber(string.sub(v,string.find(v,'%d+') or 0) or 0)]
+        local inf = table.contains(functions, v)
+--        local inf = functions[tonumber(string.sub(v,string.find(v,'%d+') or 0) or 0)]
         if fname and not inf then
             local id = string.sub(v, string.find(v, '%d+'))
             local func = var.recall(v)
@@ -167,8 +174,9 @@ function intersection()
     -- find all intersection points
     for i = 2, #functions do
         for j = 1, i - 1 do
-            local expr = functions[i]..'='..functions[j]
-            local ip = math.evalStr('solve('..expr..', x)')
+            local expr = string.format('%s=%s', functions[i], functions[j])
+            local dispip = string.format('solve(%s, x)', expr)
+            local ip = math.evalStr(dispip)
             if ipoints[ip] ~= ip then
                 ipoints[ip] = ip
             end
@@ -194,15 +202,21 @@ function sortf()
     -- only call if a and b are defined
     local a = var.recall('a')
     local b = var.recall('b')
-   
+    
+    --var.store('test', table.concat(functions, ', '))
+    local devrn = {}
+
+    local randnum = math.random(a*100, b*100) / 100
+    table.insert(devrn, #devrn+1, randnum)
+    
     -- evaluate all functions with random number within range 
     for i, v in ipairs(functions) do
-        local randnum = math.random(a*100, b*100) / 100
         local val = math.evalStr(string.gsub(v, 'x', randnum))
         table.insert(values, val)
     end
 
     local values_copy = deref(values)
+--    var.store('test', table.concat(values_copy, ', ')..', '..table.concat(devrn, ', '))
 
     table.sort(values_copy)
 
@@ -229,7 +243,9 @@ function sortf()
         end
     end
 
-    -- reverse the order of functions
+    
+    var.store('test', table.concat(functions, ', '))
+- reverse the order of functions
     functions = table.reverse(functions_copy)
 
 end
@@ -287,7 +303,8 @@ function on.paint(gc)
 
     -- draws the ui
     if var.recall('areadisp') and var.recall('region') then
-        gc:drawString('area: '..var.recall('region'), 10, 60)
+        local area = string.format('area: %d', var.recall('region'))
+        gc:drawString(area, 10, 60)
     end
 
     -- define
@@ -296,14 +313,16 @@ function on.paint(gc)
         if string.find(val, 'func') and var.recall(val) ~= '' or val == 'func1' then
             local id = string.sub(val, string.find(val, '%d+'))
             local func = var.recall(val)
-            gc:drawString('f'..id..'(x)=', 10, 10 + fontsize * id)
+            local dispf = string.format('f%d(x)=', id)
+            gc:drawString(dispf, 10, 10 + fontsize * id)
             gc:drawString(func, 50, 10 + fontsize * id)
         end
     end
 
     for i, key in ipairs(orientation) do
-        local val = var.recall(key) or ''
-        gc:drawString(key..' is '..val, 100, 10 + 10 * i)
+        local val = var.recall(key) or 0
+        local dispv = string.format('%s is %d', key, val)
+        gc:drawString(dispv, 100, 10 + 10 * i)
     end
 
     -- graph
@@ -313,6 +332,9 @@ function on.paint(gc)
 
     gc:drawString(table.concat(functions, ', '), 100, 60)
 
+    if var.recall('test') then
+        gc:drawString(var.recall('test'), 10, 80)
+    end
     --gc:drawString(var.recall('ypos'), 50, 60)
     --gc:drawString(var.recall('xpos'), 70, 60)
 
@@ -341,9 +363,10 @@ function on.enterKey()
 
     for i = 1, #functions do
         -- stop at last function
-        if functions[i] == nil then
+        if functions[i] == nil or opts['func'..i] == nil then
             break
         end
+
         local val = opts['func'..i]
 
         -- get intersection points
@@ -368,10 +391,12 @@ function on.enterKey()
     end
 
     -- integrate obtained region
-    local integral = 'integral('..opts.region..', x'
+    local a = var.recall('a')
+    local b = var.recall('b')
+    local dispint = string.format('integral(%s, x, %d, %d)',
+                                  opts.region, a, b)
 
-    range = ', '..var.recall('a')..', '..var.recall('b')..')'
-    var.store('region', math.evalStr(integral..range))
+    var.store('region', math.evalStr(dispint))
 
     window:invalidate()  
 end
@@ -387,7 +412,8 @@ function on.charIn(key)
     local xpos = var.recall('xpos')
     if xpos == 1 then
         local oldfunc = var.recall('func'..ypos) or ''
-        var.store('func'..ypos, oldfunc..key)
+        local dispf = string.format('func%d', ypos)
+        var.store(dispf, oldfunc..key)
     elseif xpos == 2 then
         -- a, b (optional)
         -- axis of rotation
