@@ -156,15 +156,11 @@ function accumulatef()
     for i, v in ipairs(var.list()) do
         local fname = string.find(v, 'func%d+')
         local inf = table.contains(functions, v)
---        local inf = functions[tonumber(string.sub(v,string.find(v,'%d+') or 0) or 0)]
         if fname and not inf then
             local id = string.sub(v, string.find(v, '%d+'))
             local func = var.recall(v)
             table.insert(functions, tonumber(id), var.recall(v))
             opts['func'..id] = {id = id, func = func}
-            if tonumber(id) == 1 then
-                opts.region = func
-            end
         end
     end
 end
@@ -199,64 +195,61 @@ end
 function sortf()
 
     -- sort functions by ascending output
-    -- only call if a and b are defined
     local a = var.recall('a')
-    local b = var.recall('b')
-    
-    --var.store('test', table.concat(functions, ', '))
-    local devrn = {}
-
+    local b = var.recall('b')    
     local randnum = math.random(a*100, b*100) / 100
-    table.insert(devrn, #devrn+1, randnum)
-    
+    local indexdiff = {}
+    local functions_copy = {}
+
+    randexpr = string.format('Define x = %f', randnum)
+    math.eval(randexpr)
+
     -- evaluate all functions with random number within range 
     for i, v in ipairs(functions) do
-        local val = math.evalStr(string.gsub(v, 'x', randnum))
+        local val = tonumber(math.evalStr(v))
         table.insert(values, val)
     end
 
+    math.eval('DelVar x')
+
     local values_copy = deref(values)
---    var.store('test', table.concat(values_copy, ', ')..', '..table.concat(devrn, ', '))
-
     table.sort(values_copy)
-
-    local indexdiff = {}
+    values_copy = table.reverse(values_copy)
 
     -- find the difference in index between values and sorted values
     for i, v in ipairs(values) do
         for ic, vc in ipairs(values_copy) do
             if v == vc then
                 local id = ic - i
-                indexdiff[v] = {}
-                indexdiff[v].id = id
+                indexdiff[i] = id
             end
         end
     end
 
-    functions_copy = {}
-
-    -- apply index differences to functions
-    for k, v in pairs(indexdiff) do
-        local id = v.id
-        for fi, fv in ipairs(functions) do
-            functions_copy[fi-id] = fv
-        end
+    -- apply the index difference
+    for i, v in ipairs(functions) do
+        functions_copy[i+indexdiff[i]] = v
     end
-
     
-    var.store('test', table.concat(functions, ', '))
-- reverse the order of functions
-    functions = table.reverse(functions_copy)
+    functions = functions_copy
 
 end
 
-function graph(expr)
+function graph(f) -- pass the x^2
 
     -- send points to on.paint(gc)
+
+    for k, v in pairs(opts) do
+        if v.func == f then
+            expr = v
+        end
+    end
+
     local id    = tonumber(expr.id)
     local fname = 'f'..id
 
-    math.eval('Define '..fname..'(x)='..expr.func)
+    defexpr = string.format('Define %s(x)=%s', fname, expr.func)
+    math.eval(defexpr)
     points[id] = {}
     local fplot = points[id]
 
@@ -303,7 +296,7 @@ function on.paint(gc)
 
     -- draws the ui
     if var.recall('areadisp') and var.recall('region') then
-        local area = string.format('area: %d', var.recall('region'))
+        local area = string.format('area: %s', var.recall('region'))
         gc:drawString(area, 10, 60)
     end
 
@@ -335,8 +328,6 @@ function on.paint(gc)
     if var.recall('test') then
         gc:drawString(var.recall('test'), 10, 80)
     end
-    --gc:drawString(var.recall('ypos'), 50, 60)
-    --gc:drawString(var.recall('xpos'), 70, 60)
 
     -- safe way to plot points
     for i = 1, #points do
@@ -362,33 +353,31 @@ function on.enterKey()
     sortf()
 
     for i = 1, #functions do
-        -- stop at last function
-        if functions[i] == nil or opts['func'..i] == nil then
+        --local val = opts['func'..i]
+        if not functions[i] and not opts['func'..i] then
             break
         end
-
-        local val = opts['func'..i]
 
         -- get intersection points
         intersection()
 
-        -- if function is defined, graph it
-        if var.recall('func'..i) ~= '' then
-            graph(val)
+        -- graph function
+        if var.recall('func'..i) then
+            graph(functions[i])
         end
 
         -- obtain region to integrate
-        if i > 1 then
-            local copy = opts.region
-            if copy ~= '' and copy then
-                copy = copy..'-'
-                opts.region = math.evalStr(copy..val.func)
-            elseif not copy then
-                copy = ''
-                opts.region = 'undef'
-            end
+        local copy = opts.region
+        if copy == '' then
+            opts.region = functions[i]
+        elseif copy ~= '' and copy then
+            opts.region = string.format('%s-%s', copy, functions[i])
+        elseif not copy then
+            copy = ''
+            opts.region = 'undef'
         end
     end
+    opts.region = math.evalStr(opts.region)
 
     -- integrate obtained region
     local a = var.recall('a')
@@ -396,6 +385,7 @@ function on.enterKey()
     local dispint = string.format('integral(%s, x, %d, %d)',
                                   opts.region, a, b)
 
+    var.store('test', dispint)
     var.store('region', math.evalStr(dispint))
 
     window:invalidate()  
@@ -415,8 +405,6 @@ function on.charIn(key)
         local dispf = string.format('func%d', ypos)
         var.store(dispf, oldfunc..key)
     elseif xpos == 2 then
-        -- a, b (optional)
-        -- axis of rotation
         local res = orientation[ypos] or ''
         local val = (var.recall(res) or '')..key
         var.store(res, val)
